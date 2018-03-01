@@ -28,6 +28,22 @@ char *freadStr(char *buffer, int n, FILE *fp){
 	return buffer;
 }
 
+static uint_fast32_t dl_new_hash (const char *s)
+{
+        uint_fast32_t h = 5381;
+        unsigned char c;
+
+        for (c = *s; c != '\0'; c = *++s)
+                h = h * 33 + c;
+
+        return h & 0xffffffff;
+}
+
+uint32_t *buckets;
+uint32_t *chains;
+int32_t nbuckets;
+int32_t nchains;
+
 void readElf(){
 	FILE *fp = fopen("file/libdemo.so", "rb");
 		if(!fp){
@@ -270,11 +286,9 @@ void readElf(){
 		uint32_t hashOffset = 0;
 		int hashTblNum = 0;
 
-		int32_t nbuckets;
-		int32_t nchains;
 
-		uint32_t *buckets;
-		uint32_t *chains;
+
+
 
 		printf("sh_size:%d, sh_entsize:%d\n", hash_shdr.sh_size, hash_shdr.sh_entsize);
 
@@ -305,7 +319,8 @@ void readElf(){
 
 		uint32_t actual = nbuckets * 4 + nchains * 4 + 8;
 
-		printf("actual len:%d\n", actual);
+		printf("actual len:%d\n\n\n\n", actual);
+
 
 		free(strTab);
 		free(dynstrTab);
@@ -314,7 +329,7 @@ void readElf(){
 }
 
 void printSymble() {
-	FILE* fp = fopen("file/libtarget.so", "rb");
+	FILE* fp = fopen("file/libdemo.so", "rb");
 	fseek(fp, 0, SEEK_END);
 	long size = ftell(fp);
 	printf("file %s len: %ld\n", FILE_NAME, size);
@@ -383,6 +398,28 @@ void printSymble() {
 		printf("symstr:%s offset:%d\n", dynstr + dynsymtab[i].st_name,
 				dynsymtab[i].st_value);
 	}
+
+	printf("\n\n\n\n");
+	int k=0;
+
+	for(k=0; k<nbuckets; k++){
+		if(STN_UNDEF != buckets[k]){
+			printf("bucket[%d]=%d	=>	%s\n", k, buckets[k], dynstr + dynsymtab[buckets[k]].st_name);
+		}else{
+			printf("bucket[%d]=%d	=>	%s\n", k, buckets[k], "STN_UNDEF");
+		}
+	}
+
+	for(k=0; k<nchains; k++){
+		if(STN_UNDEF != chains[k]){
+			printf("chain[%d]=%d	=>	%s\n", k, chains[k], dynstr + dynsymtab[chains[k]].st_name);
+		}else{
+			printf("chain[%d]=%d	=>	%s\n", k, chains[k], "STN_UNDEF");
+		}
+	}
+
+
+
 	free(dynsymtab);
 	free(rel_ent);
 	free(shstrtab);
@@ -407,10 +444,36 @@ uint32_t getLibAddress(const char *name){
 	return ret;
 }
 
+// ELF Hash Function
+static unsigned int ELFHash(char *str, unsigned int length){
+    unsigned int hash = 0;
+    unsigned int x = 0;
+
+    while (*str)
+    {
+        hash = (hash << 4) + (*str++);//hash左移4位，把当前字符ASCII存入hash低四位。
+        if ((x = hash & 0xF0000000L) != 0)
+        {
+            //如果最高的四位不为0，则说明字符多余7个，现在正在存第8个字符，如果不处理，再加下一个字符时，第一个字符会被移出，因此要有如下处理。
+            //该处理，如果对于字符串(a-z 或者A-Z)就会仅仅影响5-8位，否则会影响5-31位，因为C语言使用的算数移位
+            //因为1-4位刚刚存储了新加入到字符，所以不能>>28
+            hash ^= (x >> 24);
+            //上面这行代码并不会对X有影响，本身X和hash的高4位相同，下面这行代码&~即对28-31(高4位)位清零。
+            hash &= ~x;
+        }
+    }
+    //返回一个符号位为0的数，即丢弃最高位，以免函数外产生影响。(我们可以考虑，如果只有字符，符号位不可能为负)
+    return hash % length;
+}
+
+
+
 int main(void) {
 	readElf();
-//	printSymble();
-//	getLibAddress("");
+	printSymble();
+
+
+
 	return EXIT_SUCCESS;
 }
 
